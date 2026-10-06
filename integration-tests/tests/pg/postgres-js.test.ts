@@ -15,7 +15,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import type { PostgresJsDatabase, PostgresJsRawExecuteResult } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
-import type { RowList } from 'postgres';
+import postgres, { type RowList } from 'postgres';
 import { describe, expect, expectTypeOf } from 'vitest';
 import { randomString } from '~/utils';
 import { tests } from './common';
@@ -811,5 +811,56 @@ describe('transaction snapshot', () => {
 
 	test('does not let the id inject SQL', async ({ db }) => {
 		await assertSnapshotIdNotInjectable(db, expect, 'pgjs');
+	});
+});
+
+describe('prepared statements', () => {
+	const countPrepared = async (db: PostgresJsDatabase, marker: string) => {
+		const [row] = await db.execute<{ count: number }>(
+			sql`select count(*)::int as count from pg_prepared_statements where statement like ${`%${marker}%`}`,
+		);
+		return row!.count;
+	};
+
+	test('ordinary queries are not prepared by default', async ({ onTestFinished }) => {
+		const client = postgres(process.env['PG_CONNECTION_STRING']!, { max: 1 });
+		onTestFinished(() => client.end());
+		const db = drizzle({ client });
+
+		await db.execute(sql`select ${1}::int as prepare_default_marker`);
+		await db.execute(sql`select ${2}::int as prepare_default_marker`);
+
+		expect(await countPrepared(db, 'prepare_default_marker')).toBe(0);
+	});
+
+	test('prepare: true reuses one named statement, also in transactions and savepoints', async ({ onTestFinished }) => {
+		const client = postgres(process.env['PG_CONNECTION_STRING']!, { max: 1 });
+		onTestFinished(() => client.end());
+		const db = drizzle({ client, prepare: true });
+
+		await db.execute(sql`select ${1}::int as prepare_on_marker`);
+		await db.execute(sql`select ${2}::int as prepare_on_marker`);
+		const result = await db.transaction(async (tx) => {
+			await tx.execute(sql`select ${3}::int as prepare_on_tx_marker`);
+			return tx.transaction(async (sp) =>
+				sp.execute<{ v: number }>(sql`select ${4}::int as v, 'prepare_on_sp_marker'`)
+			);
+		});
+
+		expect([...result]).toStrictEqual([{ v: 4, '?column?': 'prepare_on_sp_marker' }]);
+		expect(await countPrepared(db, 'prepare_on_marker')).toBe(1);
+		expect(await countPrepared(db, 'prepare_on_tx_marker')).toBe(1);
+		expect(await countPrepared(db, 'prepare_on_sp_marker')).toBe(1);
+	});
+
+	test('client prepare: false wins over drizzle prepare: true', async ({ onTestFinished }) => {
+		const client = postgres(process.env['PG_CONNECTION_STRING']!, { max: 1, prepare: false });
+		onTestFinished(() => client.end());
+		const db = drizzle({ client, prepare: true });
+
+		await db.execute(sql`select ${1}::int as prepare_client_off_marker`);
+		await db.execute(sql`select ${2}::int as prepare_client_off_marker`);
+
+		expect(await countPrepared(db, 'prepare_client_off_marker')).toBe(0);
 	});
 });

@@ -15,6 +15,7 @@ import type { Assume } from '~/utils.ts';
 export interface PostgresJsSessionOptions {
 	logger?: Logger;
 	cache?: Cache;
+	prepare?: boolean;
 }
 
 export class PostgresJsSession<TSQL extends Sql, TRelations extends AnyRelations>
@@ -48,19 +49,20 @@ export class PostgresJsSession<TSQL extends Sql, TRelations extends AnyRelations
 		},
 		cacheConfig?: WithCacheConfig,
 	) {
+		const prepare = name !== false || this.options.prepare === true;
 		const executor = async (params?: unknown[]) => {
 			if (mode === 'objects') {
 				return this.client.unsafe(query.sql, params ?? [] as any[], {
-					prepare: name !== false,
+					prepare,
 				}).then((rows) => Object.values(rows));
 			}
 			if (mode === 'raw') {
 				return this.client.unsafe(query.sql, params ?? [] as any[], {
-					prepare: name !== false,
+					prepare,
 				});
 			}
 			return this.client.unsafe(query.sql, params ?? [] as any[], {
-				prepare: name !== false,
+				prepare,
 			}).values().then((rows) => Object.values(rows));
 		};
 

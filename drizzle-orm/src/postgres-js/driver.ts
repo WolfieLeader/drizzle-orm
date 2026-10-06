@@ -10,6 +10,21 @@ import { postgresJsCodecs } from './codecs.ts';
 import type { PostgresJsQueryResultHKT } from './session.ts';
 import { PostgresJsSession } from './session.ts';
 
+export type PostgresJsDrizzleConfig<TRelations extends AnyRelations = EmptyRelations> =
+	& DrizzlePgConfig<TRelations>
+	& {
+		/**
+		 * Run every parameterized query as a named prepared statement, so postgres.js reuses it on the same
+		 * connection. By default only queries built with `.prepare()` are prepared.
+		 *
+		 * A client created with `prepare: false` (for example behind PgBouncer in transaction mode) still wins.
+		 *
+		 * A named statement keeps the parameter types it was first prepared with. After a migration changes a column's
+		 * type, reconnect the client so open connections do not reuse the old types.
+		 */
+		prepare?: boolean;
+	};
+
 export class PostgresJsDatabase<TRelations extends AnyRelations = EmptyRelations>
 	extends PgAsyncDatabase<PostgresJsQueryResultHKT, TRelations>
 {
@@ -20,7 +35,7 @@ function construct<
 	TRelations extends AnyRelations = EmptyRelations,
 >(
 	client: Sql,
-	config: DrizzlePgConfig<TRelations> = {},
+	config: PostgresJsDrizzleConfig<TRelations> = {},
 ): PostgresJsDatabase<TRelations> & {
 	$client: Sql;
 } {
@@ -54,6 +69,7 @@ function construct<
 	const session = new PostgresJsSession(client, dialect, relations, {
 		logger,
 		cache: config.cache,
+		prepare: config.prepare,
 	});
 	const db = new PostgresJsDatabase(dialect, session, relations);
 	(<any> db).$client = client;
@@ -73,10 +89,10 @@ export function drizzle<
 		string,
 	] | [
 		string,
-		DrizzlePgConfig<TRelations>,
+		PostgresJsDrizzleConfig<TRelations>,
 	] | [
 		(
-			& DrizzlePgConfig<TRelations>
+			& PostgresJsDrizzleConfig<TRelations>
 			& ({
 				connection: string | ({ url?: string } & Options<Record<string, PostgresType>>);
 			} | {
@@ -96,7 +112,7 @@ export function drizzle<
 	const { connection, client, ...DrizzlePgConfig } = params[0] as {
 		connection?: { url?: string } & Options<Record<string, PostgresType>>;
 		client?: TClient;
-	} & DrizzlePgConfig<TRelations>;
+	} & PostgresJsDrizzleConfig<TRelations>;
 
 	if (client) return construct(client, DrizzlePgConfig) as any;
 
@@ -115,7 +131,7 @@ export namespace drizzle {
 	export function mock<
 		TRelations extends AnyRelations = EmptyRelations,
 	>(
-		config?: DrizzlePgConfig<TRelations>,
+		config?: PostgresJsDrizzleConfig<TRelations>,
 	): PostgresJsDatabase<TRelations> & {
 		$client: '$client is not available on drizzle.mock()';
 	} {
