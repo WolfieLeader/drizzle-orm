@@ -16,7 +16,7 @@ export class EffectDrizzleQueryError extends Schema.TaggedError<EffectDrizzleQue
 	static readonly [entityKind]: string = 'EffectDrizzleQueryError';
 
 	override get message() {
-		return `Failed query: ${this.query}\nparams: ${this.params}`;
+		return `Failed query: ${this.query}\nparams: ${this.params.length} omitted (see .params)`;
 	}
 
 	constructor(params: Omit<Schema.Struct.MakeIn<typeof EffectDrizzleQueryError.fields>, '_tag'>) {
