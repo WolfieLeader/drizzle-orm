@@ -771,6 +771,8 @@ const jsonStringify = (data: any) => {
 	});
 };
 
+const studioOrigins = ['https://local.drizzle.studio'];
+
 export type Server = {
 	start: (params: {
 		host: string;
@@ -800,6 +802,17 @@ export const prepareServer = async (
 ): Promise<Server> => {
 	app = app !== undefined ? app : new Hono();
 
+	// The server runs any SQL it receives and has no login, so only the Studio page may call it.
+	// A browser always sends `Origin` on a cross-origin request and no page can forge it, so this
+	// stops other websites open in the same browser. A request without `Origin` (curl, scripts) is
+	// not from a web page and is still served.
+	app.use(async (ctx, next) => {
+		const origin = ctx.req.header('Origin');
+		if (origin !== undefined && !studioOrigins.includes(origin)) {
+			return ctx.text('Forbidden', 403);
+		}
+		await next();
+	});
 	app.use(compress());
 	app.use(async (ctx, next) => {
 		await next();
@@ -807,7 +820,7 @@ export const prepareServer = async (
 		// * https://github.com/drizzle-team/drizzle-orm/issues/1857#issuecomment-2395724232
 		ctx.header('Access-Control-Allow-Private-Network', 'true');
 	});
-	app.use(cors());
+	app.use(cors({ origin: studioOrigins }));
 	// Hono rethrows everything that is not an `Error` instance instead of passing it
 	// to `onError`, which crashes the process on drivers rejecting with a plain object/string
 	app.use(async (_ctx, next) => {
