@@ -802,10 +802,6 @@ export const prepareServer = async (
 ): Promise<Server> => {
 	app = app !== undefined ? app : new Hono();
 
-	// The server runs any SQL it receives and has no login, so only the Studio page may call it.
-	// A browser always sends `Origin` on a cross-origin request and no page can forge it, so this
-	// stops other websites open in the same browser. A request without `Origin` (curl, scripts) is
-	// not from a web page and is still served.
 	app.use(async (ctx, next) => {
 		const origin = ctx.req.header('Origin');
 		if (origin !== undefined && !studioOrigins.includes(origin)) {
